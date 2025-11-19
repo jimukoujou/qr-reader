@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>QRコード読み取り（スクショ貼付け対応）</title>
+<style>
+  body{font-family:Segoe UI, sans-serif; padding:20px; background:#f5f5f5;}
+  h1{font-size:1.8rem; margin-bottom:15px; text-align:center;}
+  .card{background:white; padding:25px; border-radius:16px; box-shadow:0 4px 12px rgba(0,0,0,0.08); max-width:750px; margin:0 auto 20px auto;}
+  button{padding:10px 20px; border:none; border-radius:10px; cursor:pointer; font-size:1rem; margin-right:10px; margin-top:5px;}
+  #pasteBtn{background:#0078ff; color:white;}
+  #pasteBtn.flash{animation:flash 0.6s ease-in-out infinite alternate;}
+  #clipBtn{background:#28a745; color:white;}
+  #resetBtn{background:#dc3545; color:white;}
+  .droparea{border:2px dashed #bbb; padding:40px; text-align:center; border-radius:12px; background:white; margin-bottom:20px; font-size:1rem;}
+  .droparea.highlight{border-color:#0078ff; background:#eef6ff;}
+  img{max-width:100%; margin-top:15px; border-radius:12px;}
+  .desc{font-size:1rem; color:#333; line-height:1.7; margin-bottom:10px;}
+  .highlight-text{font-weight:bold; font-size:1.2rem; color:#d63384; margin-bottom:15px;}
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>QRコード読み取り（スクショ貼付け対応）</h1>
+  <p class="highlight-text">スクリーンショット後、このページで <strong>Ctrl + V</strong> を押してください！</p>
+  <p class="desc">Ctrl + V で貼り付け または<br>QRコード画像をここにドラッグ＆ドロップ</p>
+
+  <div class="droparea" id="dropArea">
+    Ctrl + V で貼り付け<br>または<br>QRコード画像をここにドラッグ＆ドロップ
+  </div>
+
+  <img id="preview" style="display:none;" />
+  <p id="result" class="desc"></p>
+
+  <p class="desc">うまく貼り付かない場合は「貼付けを待機して開始」ボタンを押すか、下の「クリップボードから読み取る」ボタンを押してください。</p>
+  <button id="clipBtn">📋 クリップボードから読み取る</button>
+  <button id="pasteBtn">📌 貼付けを待機して開始</button>
+  <button id="resetBtn">🔄 リセット</button>
+</div>
+
+<script>
+let pasteMode = false;
+const pasteBtn = document.getElementById('pasteBtn');
+const clipBtn = document.getElementById('clipBtn');
+const resetBtn = document.getElementById('resetBtn');
+
+pasteBtn.addEventListener('click', () => {
+  pasteMode = true;
+  pasteBtn.classList.add('flash');
+  pasteBtn.textContent = "📥 Ctrl + V を待機中…";
+});
+
+clipBtn.addEventListener('click', async () => {
+  try {
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      if (item.types.includes('image/png') || item.types.includes('image/jpeg')) {
+        const type = item.types.includes('image/png') ? 'image/png' : 'image/jpeg';
+        const blob = await item.getType(type);
+        displayImage(blob);
+        return;
+      }
+    }
+    alert('クリップボードに画像がありません。');
+  } catch (e) {
+    alert('クリップボードの読み取りが許可されませんでした。HTTPSでアクセスするか、ローカルサーバーを使用してください。');
+  }
+});
+
+resetBtn.addEventListener('click', () => {
+  const img = document.getElementById('preview');
+  const result = document.getElementById('result');
+  img.src = '';
+  img.style.display = 'none';
+  result.textContent = '';
+  pasteMode = false;
+  pasteBtn.classList.remove('flash');
+  pasteBtn.textContent = "📌 貼付けを待機して開始";
+});
+
+// global paste listener
+window.addEventListener('paste', e => {
+  if (!pasteMode) return;
+  handlePaste(e);
+});
+window.addEventListener('paste', handlePaste);
+
+function handlePaste(e){
+  const items = e.clipboardData.items;
+  for (let i of items){
+    if (i.type.indexOf("image") === 0){
+      const blob = i.getAsFile();
+      displayImage(blob);
+      pasteMode = false;
+      pasteBtn.classList.remove('flash');
+      pasteBtn.textContent = "📌 貼付けを待機して開始";
+      break;
+    }
+  }
+}
+
+const dropArea = document.getElementById('dropArea');
+dropArea.addEventListener('dragover', e => { e.preventDefault(); dropArea.classList.add('highlight'); });
+dropArea.addEventListener('dragleave', () => dropArea.classList.remove('highlight'));
+dropArea.addEventListener('drop', e => {
+  e.preventDefault(); dropArea.classList.remove('highlight');
+  const file = e.dataTransfer.files[0];
+  if (file) displayImage(file);
+});
+
+function displayImage(file){
+  const reader = new FileReader();
+  reader.onload = function(){
+    const img = document.getElementById('preview');
+    img.src = reader.result;
+    img.style.display = "block";
+    decodeQR(reader.result);
+  };
+  reader.readAsDataURL(file);
+}
+
+async function decodeQR(dataURL){
+  const result = document.getElementById('result');
+  result.textContent = "QRコードを解析中…";
+
+  if (!window.jsQR){
+    await import('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js');
+  }
+
+  const img = document.getElementById('preview');
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  canvas.width = img.naturalWidth;
+  canvas.height = img.naturalHeight;
+  ctx.drawImage(img, 0, 0);
+  const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
+
+  const qr = jsQR(imageData.data, canvas.width, canvas.height);
+  if (qr){ result.innerHTML = `<strong>読み取り結果:</strong><br><a href="${qr.data}" target="_blank">${qr.data}</a>`; }
+  else{ result.textContent = "QRコードが見つかりませんでした。"; }
+}
+</script>
+</body>
+</html>
