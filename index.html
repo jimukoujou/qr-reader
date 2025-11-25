@@ -23,7 +23,9 @@
 <body>
 <div class="card">
   <h1>QRコード読み取り（スクショ貼付け対応）</h1>
+
   <p class="highlight-text">スクリーンショット後、このページで <strong>Ctrl + V</strong> を押してください！</p>
+
   <p class="desc">Ctrl + V で貼り付け または<br>QRコード画像をここにドラッグ＆ドロップ</p>
 
   <div class="droparea" id="dropArea">
@@ -44,6 +46,7 @@ let pasteMode = false;
 const pasteBtn = document.getElementById('pasteBtn');
 const clipBtn = document.getElementById('clipBtn');
 const resetBtn = document.getElementById('resetBtn');
+const preview = document.getElementById('preview');
 
 pasteBtn.addEventListener('click', () => {
   pasteMode = true;
@@ -69,17 +72,15 @@ clipBtn.addEventListener('click', async () => {
 });
 
 resetBtn.addEventListener('click', () => {
-  const img = document.getElementById('preview');
-  const result = document.getElementById('result');
-  img.src = '';
-  img.style.display = 'none';
-  result.textContent = '';
+  preview.src = '';
+  preview.style.display = 'none';
+  document.getElementById('result').textContent = '';
   pasteMode = false;
   pasteBtn.classList.remove('flash');
   pasteBtn.textContent = "📌 貼付けを待機して開始";
 });
 
-// global paste listener
+// ★ 全体の paste を処理
 window.addEventListener('paste', e => {
   if (!pasteMode) return;
   handlePaste(e);
@@ -112,33 +113,56 @@ dropArea.addEventListener('drop', e => {
 function displayImage(file){
   const reader = new FileReader();
   reader.onload = function(){
-    const img = document.getElementById('preview');
-    img.src = reader.result;
-    img.style.display = "block";
+    preview.src = reader.result;
+    preview.style.display = "block";
     decodeQR(reader.result);
   };
   reader.readAsDataURL(file);
 }
 
+// ★ 改善済み QR解析（高速・安定版）
 async function decodeQR(dataURL){
   const result = document.getElementById('result');
   result.textContent = "QRコードを解析中…";
 
-  if (!window.jsQR){
-    await import('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js');
+  try {
+    if (!window.jsQR){
+      await import('https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js');
+    }
+
+    await new Promise(resolve => {
+      if (preview.complete) resolve();
+      else preview.onload = resolve;
+    });
+
+    // ▼ 画像を最大800pxに縮小
+    const maxSize = 800;
+    const scale = Math.min(maxSize / preview.naturalWidth, maxSize / preview.naturalHeight, 1);
+
+    const w = Math.floor(preview.naturalWidth * scale);
+    const h = Math.floor(preview.naturalHeight * scale);
+
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+
+    canvas.width = w;
+    canvas.height = h;
+    ctx.drawImage(preview, 0, 0, w, h);
+
+    const imageData = ctx.getImageData(0, 0, w, h);
+
+    const qr = jsQR(imageData.data, w, h);
+
+    if (qr){
+      result.innerHTML = `<strong>読み取り結果:</strong><br><a href="${qr.data}" target="_blank">${qr.data}</a>`;
+    } else {
+      result.textContent = "QRコードが見つかりませんでした。";
+    }
+
+  } catch (e){
+    console.error(e);
+    result.textContent = "エラーが発生しました（画像が大きすぎる可能性があります）。";
   }
-
-  const img = document.getElementById('preview');
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  canvas.width = img.naturalWidth;
-  canvas.height = img.naturalHeight;
-  ctx.drawImage(img, 0, 0);
-  const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-
-  const qr = jsQR(imageData.data, canvas.width, canvas.height);
-  if (qr){ result.innerHTML = `<strong>読み取り結果:</strong><br><a href="${qr.data}" target="_blank">${qr.data}</a>`; }
-  else{ result.textContent = "QRコードが見つかりませんでした。"; }
 }
 </script>
 </body>
